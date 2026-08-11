@@ -1,0 +1,21 @@
+[Unit]
+Description=Cover Helper — n8n article cover generator (Pillow)
+After=network.target docker.service
+
+[Service]
+Type=simple
+User=cloud4u
+WorkingDirectory=/home/cloud4u/work/marketing-automation
+Environment="HOME=/home/cloud4u"
+Environment="PATH=/home/cloud4u/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="NO_PROXY=localhost,127.0.0.1,172.17.0.1"
+Environment="COVER_TOKEN=__GENERATE_ME__"
+Environment="COVER_FONT=/home/cloud4u/work/marketing-automation/assets/dinpro_bold.otf"
+Environment="COVER_HOST=172.17.0.1"
+Environment="COVER_PORT=8081"
+ExecStart=/home/cloud4u/work/marketing-automation/.venv/bin/python /home/cloud4u/work/marketing-automation/cover-helper.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
