@@ -3,8 +3,11 @@ Telethon userbot -> claude-bridge.
 
 Минимальный безопасный скелет:
   - логинится по SESSION_STRING (env), тома не нужны;
-  - в личке отвечает на сообщения (RESPOND_PRIVATE=1);
-  - в группах отвечает только на упоминание/реплай (RESPOND_GROUP_ON_MENTION=1);
+  - Telegram доступен ТОЛЬКО через исходящий прокси (PROXY_* env) — прямого
+    egress с этой инфры нет; прокси туннелирует MTProto по HTTP CONNECT;
+  - claude-bridge локальный (172.17.0.1) и идёт МИМО прокси (aiohttp без
+    trust_env, proxy не задаём) — иначе локальный вызов сломается;
+  - в личке отвечает на сообщения; в группах — только на упоминание/реплай;
   - в broadcast-каналах молчит;
   - при старте пишет в лог, кем залогинился и достаёт ли claude-bridge
     (это и есть сетевая разведка — смотри логи контейнера в Dokploy).
@@ -17,6 +20,7 @@ import os
 import asyncio
 import logging
 import aiohttp
+import python_socks
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 
@@ -37,7 +41,31 @@ RESPOND_GROUP_ON_MENTION = os.environ.get("RESPOND_GROUP_ON_MENTION", "1") == "1
 TRIGGER_PREFIX = os.environ.get("TRIGGER_PREFIX", "")   # напр. "!ai " — требовать префикс
 MAX_PROMPT = int(os.environ.get("MAX_PROMPT", "8000"))
 
-client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+
+def build_proxy():
+    """Прокси для подключения Telethon к Telegram. None -> прямой коннект."""
+    host = os.environ.get("PROXY_HOST", "").strip()
+    if not host:
+        return None
+    type_map = {
+        "http": python_socks.ProxyType.HTTP,
+        "socks5": python_socks.ProxyType.SOCKS5,
+        "socks4": python_socks.ProxyType.SOCKS4,
+    }
+    ptype = type_map.get(os.environ.get("PROXY_TYPE", "http").lower(),
+                         python_socks.ProxyType.HTTP)
+    return (
+        ptype,
+        host,
+        int(os.environ.get("PROXY_PORT", "8787")),
+        True,  # rdns
+        os.environ.get("PROXY_USER") or None,
+        os.environ.get("PROXY_PASS") or None,
+    )
+
+
+client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH,
+                        proxy=build_proxy())
 
 
 async def ask_claude(prompt: str) -> str:
@@ -46,6 +74,8 @@ async def ask_claude(prompt: str) -> str:
         headers["X-Bridge-Token"] = BRIDGE_TOKEN
     payload = {"prompt": prompt, "model": BRIDGE_MODEL}
     timeout = aiohttp.ClientTimeout(total=120)
+    # trust_env=False (по умолчанию): НЕ подхватываем http_proxy из env,
+    # чтобы локальный bridge шёл напрямую, а не через прокси.
     async with aiohttp.ClientSession(timeout=timeout) as s:
         async with s.post(BRIDGE_URL, json=payload, headers=headers) as r:
             r.raise_for_status()
@@ -105,8 +135,9 @@ async def main():
     except Exception as e:
         log.error("claude-bridge недоступен: %s", e)
 
-    log.info("Бот запущен. PRIVATE=%s GROUP_ON_MENTION=%s PREFIX=%r",
-             RESPOND_PRIVATE, RESPOND_GROUP_ON_MENTION, TRIGGER_PREFIX)
+    log.info("Бот запущен. PRIVATE=%s GROUP_ON_MENTION=%s PREFIX=%r PROXY=%s",
+             RESPOND_PRIVATE, RESPOND_GROUP_ON_MENTION, TRIGGER_PREFIX,
+             bool(os.environ.get("PROXY_HOST")))
     await client.run_until_disconnected()
 
 
