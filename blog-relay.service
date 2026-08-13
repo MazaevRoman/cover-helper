@@ -1,0 +1,22 @@
+[Unit]
+Description=Blog Relay — n8n to Bitrix blog publisher (proxy bypass)
+After=network.target docker.service
+
+[Service]
+Type=simple
+User=cloud4u
+WorkingDirectory=/home/cloud4u/work/marketing-automation
+Environment="HOME=/home/cloud4u"
+Environment="PATH=/home/cloud4u/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="NO_PROXY=localhost,127.0.0.1,172.17.0.1"
+Environment="RELAY_TOKEN=__GENERATE_ME__"
+Environment="RELAY_HOST=172.17.0.1"
+Environment="RELAY_PORT=8083"
+Environment="BLOG_BASE=https://skorokhodov.site.cloud4w.ru"
+Environment="BLOG_TOKEN=test_key"
+ExecStart=/home/cloud4u/work/marketing-automation/.venv/bin/python /home/cloud4u/work/marketing-automation/blog-relay.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
